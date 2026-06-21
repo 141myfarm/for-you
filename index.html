@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amazing Love Animation</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050510; /* Глубокий космический черный */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="animationCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('animationCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    
+    // Настройки частиц
+    const particles = [];
+    const word = "I love you";
+    const totalParticles = 250; 
+
+    // Формула сердца для целевых точек
+    function getHeartPoint(t, scale) {
+        let x = 16 * Math.pow(Math.sin(t), 3);
+        let y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+        return { x: x * scale, y: -y * scale }; // инвертируем Y для экрана
+    }
+
+    // Инициализация частиц
+    for (let i = 0; i < totalParticles; i++) {
+        let t = (i / totalParticles) * Math.PI * 2;
+        // Целевая точка на сердце
+        let heartTarget = getHeartPoint(t, Math.min(canvas.width, canvas.height) * 0.022);
+        
+        particles.push({
+            // Начальная позиция (в центре для первого появления)
+            x: centerX,
+            y: centerY,
+            // Цель на этапе сердца
+            targetX: centerX + heartTarget.x,
+            targetY: centerY + heartTarget.y,
+            // Скорости для взрыва
+            vx: 0,
+            vy: 0,
+            // Случайный размер шрифта для динамики
+            size: Math.random() * 6 + 8,
+            // Индивидуальный оттенок неонового розового/фиолетового
+            color: `hsla(${340 + Math.random() * 40}, 100%, 65%, `, 
+            angle: Math.random() * Math.PI * 2,
+            spin: (Math.random() - 0.5) * 0.05,
+            alpha: 0
+        });
+    }
+
+    let startTime = Date.now();
+
+    function animate() {
+        // Эффект шлейфа (motion blur) — не стираем экран полностью
+        ctx.fillStyle = 'rgba(5, 5, 16, 0.12)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        let elapsed = (Date.now() - startTime) / 1000; // Время в секундах
+
+        // --- ФАЗА 1: Появление надписи (0 - 4 сек) ---
+        if (elapsed < 4) {
+            let alpha = Math.min(elapsed / 2, 1); // плавное появление
+            let pulse = 1 + Math.sin(elapsed * 2) * 0.03; // легкое дыхание текста
+            
+            ctx.save();
+            ctx.font = `bold ${50 * pulse}px Arial`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            
+            // Крутой неоновый градиент и свечение
+            ctx.shadowBlur = 25;
+            ctx.shadowColor = "#ff2a6d";
+            ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+            ctx.fillText(word, centerX, centerY);
+            ctx.restore();
+        }
+        
+        // --- ТРИГГЕР ВЗРЫВА (ровно на 4 секунде) ---
+        if (elapsed >= 4 && elapsed < 4.1) {
+            particles.forEach(p => {
+                let angle = Math.random() * Math.PI * 2;
+                let speed = Math.random() * 12 + 5;
+                p.vx = Math.sin(angle) * speed;
+                p.vy = Math.cos(angle) * speed;
+                p.alpha = 1;
+            });
+        }
+
+        // --- ФАЗА 2, 3, 4: Жизнь частиц (после 4 секунд) ---
+        if (elapsed >= 4) {
+            particles.forEach(p => {
+                ctx.save();
+                ctx.font = `${p.size}px monospace`;
+                ctx.textAlign = "center";
+                
+                // Свечение для каждой летящей буковки
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = "#ff2a6d";
+
+                if (elapsed < 5.5) {
+                    // Разлет взрыва
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.vx *= 0.98; // сопротивление среды
+                    p.vy *= 0.98;
+                    p.angle += p.spin;
+                } 
+                else if (elapsed >= 5.5 && elapsed < 12) {
+                    // Плавное притяжение к сердцу (магнитный эффект)
+                    let dx = p.targetX - p.x;
+                    let dy = p.targetY - p.y;
+                    p.x += dx * 0.03; // скорость сборки
+                    p.y += dy * 0.03;
+                    p.angle *= 0.95; // выравнивание текста ровно
+                } 
+                else if (elapsed >= 12 && elapsed < 18) {
+                    // Сердце бьется
+                    let beat = 1 + Math.sin(elapsed * 4.5) * 0.04;
+                    let curTargetX = centerX + (p.targetX - centerX) * beat;
+                    let curTargetY = centerY + (p.targetY - centerY) * beat;
+                    p.x += (curTargetX - p.x) * 0.2;
+                    p.y += (curTargetY - p.y) * 0.2;
+                }
+                else if (elapsed >= 18) {
+                    // Растворение в конце
+                    p.alpha -= 0.015;
+                    p.y -= 0.5; // частицы улетают вверх как дым
+                }
+
+                ctx.translate(p.x, p.y);
+                ctx.rotate(p.angle);
+                ctx.fillStyle = p.color + Math.max(p.alpha, 0) + ")";
+                ctx.fillText(word, 0, 0);
+                ctx.restore();
+            });
+        }
+
+        // Перезапуск анимации по кругу через 21 секунду
+        if (elapsed > 21) {
+            startTime = Date.now();
+            particles.forEach(p => {
+                p.x = centerX;
+                p.y = centerY;
+                p.alpha = 0;
+                p.angle = Math.random() * Math.PI * 2;
+            });
+        }
+
+        requestAnimationFrame(animate);
+    }
+
+    // Запуск через долю секунды, чтобы холст успел инициализироваться
+    setTimeout(animate, 100);
+</script>
+
+</body>
+</html>
