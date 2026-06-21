@@ -422,3 +422,172 @@
                 const frameDeltaX = e.clientX - context.previousTouchX;
                 const frameDeltaY = e.clientY - context.previousTouchY;
                 context.targetTheta -= frameDeltaX * 0.006;
+                context.targetPhi -= frameDeltaY * 0.006;
+                context.targetPhi = Math.max(0.1, Math.min(Math.PI - 0.1, context.targetPhi));
+                context.previousTouchX = e.clientX; context.previousTouchY = e.clientY;
+            }, { passive: true });
+
+            window.addEventListener('mouseup', () => { context.isDragging = false; }, { passive: true });
+            
+            window.addEventListener('touchstart', (e) => {
+                if (e.touches.length !== 1) return;
+                context.isDragging = true;
+                context.previousTouchX = e.touches[0].clientX; context.previousTouchY = e.touches[0].clientY;
+            }, { passive: true });
+
+            window.addEventListener('touchmove', (e) => {
+                if (!context.isDragging || e.touches.length !== 1) return;
+                const frameDeltaX = e.touches[0].clientX - context.previousTouchX;
+                const frameDeltaY = e.touches[0].clientY - context.previousTouchY;
+                context.targetTheta -= frameDeltaX * 0.008;
+                context.targetPhi -= frameDeltaY * 0.008;
+                context.targetPhi = Math.max(0.1, Math.min(Math.PI - 0.1, context.targetPhi));
+                context.previousTouchX = e.touches[0].clientX; context.previousTouchY = e.touches[0].clientY;
+            }, { passive: true });
+
+            window.addEventListener('touchend', () => { context.isDragging = false; }, { passive: true });
+            window.addEventListener('resize', () => {
+                appRuntimeContext.cameraInstance.aspect = window.innerWidth / window.innerHeight;
+                appRuntimeContext.cameraInstance.updateProjectionMatrix();
+                appRuntimeContext.webglRenderer.setSize(window.innerWidth, window.innerHeight);
+                appRuntimeContext.effectComposer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+    }
+
+    class CoreEngineLifecycleController {
+        static setupEngineInfrastructure() {
+            appRuntimeContext.ui.status = document.getElementById('engine-status');
+            appRuntimeContext.ui.telemetry = document.getElementById('engine-telemetry');
+            appRuntimeContext.ui.loader = document.getElementById('loader-screen');
+            
+            appRuntimeContext.clockReference = new THREE.Clock();
+            appRuntimeContext.epochStartTime = Date.now();
+            appRuntimeContext.sceneInstance = new THREE.Scene();
+            appRuntimeContext.sceneInstance.fog = new THREE.FogExp2(0x010103, 0.0005);
+
+            appRuntimeContext.cameraInstance = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1.0, 4000.0);
+            appRuntimeContext.cameraInstance.position.set(0, 240, 540);
+
+            appRuntimeContext.webglRenderer = new THREE.WebGLRenderer({
+                antialias: false, powerPreference: "high-performance", alpha: false, stencil: false, depth: true
+            });
+            appRuntimeContext.webglRenderer.setPixelRatio(Math.min(window.devicePixelRatio, ENGINE_GLOBAL_PROPERTIES.technical.devicePixelRatioLimit));
+            appRuntimeContext.webglRenderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(appRuntimeContext.webglRenderer.domElement);
+
+            const coreSceneRenderPass = new THREE.RenderPass(appRuntimeContext.sceneInstance, appRuntimeContext.cameraInstance);
+            const parametersReferenceVfx = ENGINE_GLOBAL_PROPERTIES.vfx;
+            const highLuminosityBloomPass = new THREE.UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                parametersReferenceVfx.bloomStrength, parametersReferenceVfx.bloomRadius, parametersReferenceVfx.bloomThreshold
+            );
+
+            const vignetteGrainProcessingPass = new THREE.ShaderPass(HighEndVignetteGrainShader);
+            appRuntimeContext.effectComposer = new THREE.EffectComposer(appRuntimeContext.webglRenderer);
+            appRuntimeContext.effectComposer.addPass(coreSceneRenderPass);
+            appRuntimeContext.effectComposer.addPass(highLuminosityBloomPass);
+            appRuntimeContext.effectComposer.addPass(vignetteGrainProcessingPass);
+
+            const combinedParticleAttributesGeometry = MemoryBufferAllocationFactory.buildStructuralParticleGeometryMesh();
+            
+            ProgrammableGpuEngineShaders.uniforms.uTexture.value = MemoryBufferAllocationFactory.generateTextureMaskBuffer();
+            
+            const compiledShaderMaterial = new THREE.ShaderMaterial({
+                vertexShader: ProgrammableGpuEngineShaders.vertexShader,
+                fragmentShader: ProgrammableGpuEngineShaders.fragmentShader,
+                uniforms: ProgrammableGpuEngineShaders.uniforms,
+                transparent: true,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending,
+                vertexColors: true
+            });
+
+            appRuntimeContext.particleCoreSystem = new THREE.Points(combinedParticleAttributesGeometry, compiledShaderMaterial);
+            appRuntimeContext.sceneInstance.add(appRuntimeContext.particleCoreSystem);
+
+            InteractionInputRoutingSubsystem.registerEventInterfaceListeners();
+
+            setTimeout(() => {
+                if(appRuntimeContext.ui.loader) {
+                    appRuntimeContext.ui.loader.style.opacity = '0';
+                    setTimeout(() => appRuntimeContext.ui.loader.remove(), 1200);
+                }
+            }, 500);
+
+            CoreEngineLifecycleController.executeEngineRenderLoop();
+        }
+
+        static executeEngineRenderLoop() {
+            requestAnimationFrame(CoreEngineLifecycleController.executeEngineRenderLoop);
+
+            const deltaSeconds = appRuntimeContext.clockReference.getDelta() * ENGINE_GLOBAL_PROPERTIES.technical.simSpeed;
+            const absoluteElapsedSeconds = appRuntimeContext.clockReference.getElapsedTime() * ENGINE_GLOBAL_PROPERTIES.technical.simSpeed;
+
+            appRuntimeContext.performanceMetrics.frameCount++;
+            const currentTimestampMs = Date.now();
+            if (currentTimestampMs >= appRuntimeContext.performanceMetrics.lastFpsUpdate + 1000) {
+                appRuntimeContext.performanceMetrics.currentFps = Math.round((appRuntimeContext.performanceMetrics.frameCount * 1000) / (currentTimestampMs - appRuntimeContext.performanceMetrics.lastFpsUpdate));
+                appRuntimeContext.performanceMetrics.frameCount = 0;
+                appRuntimeContext.performanceMetrics.lastFpsUpdate = currentTimestampMs;
+            }
+
+            appRuntimeContext.internalPhaseTimer += deltaSeconds;
+            const chronologySettings = ENGINE_GLOBAL_PROPERTIES.chronology;
+
+            if (appRuntimeContext.currentPhaseIndex === 0) {
+                appRuntimeContext.ui.status.innerText = "System: Galaxy Core Orbit";
+                if (appRuntimeContext.internalPhaseTimer >= chronologySettings.galaxyPhaseDuration) {
+                    appRuntimeContext.currentPhaseIndex = 1;
+                    appRuntimeContext.internalPhaseTimer = 0.0;
+                }
+            } else if (appRuntimeContext.currentPhaseIndex === 1) {
+                appRuntimeContext.ui.status.innerText = "System: Vector Morphing Grid";
+                if (appRuntimeContext.internalPhaseTimer >= chronologySettings.morphPhaseDuration) {
+                    appRuntimeContext.currentPhaseIndex = 2;
+                    appRuntimeContext.internalPhaseTimer = 0.0;
+                }
+            } else if (appRuntimeContext.currentPhaseIndex === 2) {
+                appRuntimeContext.ui.status.innerText = "System: Heart Resonance Active";
+                if (appRuntimeContext.internalPhaseTimer >= chronologySettings.stabilizationHold) {
+                    appRuntimeContext.currentPhaseIndex = 0;
+                    appRuntimeContext.internalPhaseTimer = 0.0;
+                }
+            }
+
+            let calculatedProgressValue = 0.0;
+            if (appRuntimeContext.currentPhaseIndex === 1) {
+                calculatedProgressValue = appRuntimeContext.internalPhaseTimer / chronologySettings.morphPhaseDuration;
+            } else if (appRuntimeContext.currentPhaseIndex === 2) {
+                calculatedProgressValue = 1.0;
+            }
+
+            ProgrammableGpuEngineShaders.uniforms.uTime.value = absoluteElapsedSeconds;
+            ProgrammableGpuEngineShaders.uniforms.uEnginePhase.value = appRuntimeContext.currentPhaseIndex;
+            ProgrammableGpuEngineShaders.uniforms.uPhaseProgress.value = calculatedProgressValue;
+
+            const interactionRef = appRuntimeContext.interaction;
+            interactionRef.thetaAngle += (interactionRef.targetTheta - interactionRef.thetaAngle) * 0.05;
+            interactionRef.phiAngle += (interactionRef.targetPhi - interactionRef.phiAngle) * 0.05;
+            interactionRef.mouseX += (interactionRef.targetMouseX - interactionRef.mouseX) * 0.05;
+            interactionRef.mouseY += (interactionRef.targetMouseY - interactionRef.mouseY) * 0.05;
+
+            const finalCalculatedCameraPosition = new THREE.Vector3();
+            finalCalculatedCameraPosition.x = interactionRef.cameraOrbitRadius * Math.sin(interactionRef.phiAngle) * Math.sin(interactionRef.thetaAngle);
+            finalCalculatedCameraPosition.y = interactionRef.cameraOrbitRadius * Math.cos(interactionRef.phiAngle);
+            finalCalculatedCameraPosition.z = interactionRef.cameraOrbitRadius * Math.sin(interactionRef.phiAngle) * Math.cos(interactionRef.thetaAngle);
+
+            appRuntimeContext.cameraInstance.position.copy(finalCalculatedCameraPosition);
+            appRuntimeContext.cameraInstance.position.x += interactionRef.mouseX;
+            appRuntimeContext.cameraInstance.position.y += interactionRef.mouseY;
+            appRuntimeContext.cameraInstance.lookAt(0, 0, 0);
+
+            appRuntimeContext.ui.telemetry.innerText = `FPS: ${appRuntimeContext.performanceMetrics.currentFps} | P: 45000`;
+            appRuntimeContext.effectComposer.render();
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', CoreEngineLifecycleController.setupEngineInfrastructure);
+</script>
+</body>
+</html>
