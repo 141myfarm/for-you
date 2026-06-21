@@ -97,13 +97,120 @@
         }
     }
 
-    // Новая сверхплотная и жирная матрица для текста «С ДНЕМ РОЖДЕНИЯ NEGR!»
     function getTextPoint(index, scale) {
         const lines = [
-            // Строка 1: С ДНЕМ
             // С
             {x: -160, y: 50, w: 35, h: 12}, {x: -180, y: 20, w: 12, h: 50}, {x: -160, y: -10, w: 35, h: 12},
             // Д
             {x: -110, y: 20, w: 35, h: 12}, {x: -125, y: -5, w: 12, h: 40}, {x: -95, y: -5, w: 12, h: 40}, {x: -110, y: -20, w: 50, h: 12}, {x: -125, y: -30, w: 12, h: 15}, {x: -95, y: -30, w: 12, h: 15},
             // Н
-            {x: -55, y: 15, w: 12, h: 65}, {x: -25, y: 15, w:
+            {x: -55, y: 15, w: 12, h: 65}, {x: -25, y: 15, w: 12, h: 65}, {x: -40, y: 15, w: 30, h: 12},
+            // Е
+            {x: 15, y: 40, w: 35, h: 12}, {x: 10, y: 15, w: 30, h: 12}, {x: 15, y: -10, w: 35, h: 12}, {x: 0, y: 15, w: 12, h: 65},
+            // М
+            {x: 55, y: 15, w: 12, h: 65}, {x: 95, y: 15, w: 12, h: 65}, {x: 67, y: 30, w: 15, h: 15}, {x: 83, y: 30, w: 15, h: 15},
+
+            // Р
+            {x: -160, y: -55, w: 12, h: 65}, {x: -140, y: -30, w: 30, h: 12}, {x: -140, y: -60, w: 30, h: 12}, {x: -125, y: -45, w: 12, h: 30},
+            // О
+            {x: -85, y: -30, w: 35, h: 12}, {x: -85, y: -80, w: 35, h: 12}, {x: -100, y: -55, w: 12, h: 50}, {x: -70, y: -55, w: 12, h: 50},
+            // Ж
+            {x: -35, y: -55, w: 12, h: 65}, {x: -35, y: -55, w: 45, h: 12}, {x: -50, y: -35, w: 15, h: 15}, {x: -20, y: -35, w: 15, h: 15}, {x: -50, y: -75, w: 15, h: 15}, {x: -20, y: -75, w: 15, h: 15},
+            // Д
+            {x: 20, y: -50, w: 35, h: 12}, {x: 5, y: -75, w: 12, h: 40}, {x: 35, y: -75, w: 12, h: 40}, {x: 20, y: -90, w: 50, h: 12}, {x: 5, y: -100, w: 12, h: 15}, {x: 35, y: -100, w: 12, h: 15},
+            // Е
+            {x: 75, y: -30, w: 35, h: 12}, {x: 70, y: -55, w: 30, h: 12}, {x: 75, y: -80, w: 35, h: 12}, {x: 60, y: -55, w: 12, h: 65},
+            // Н
+            {x: 110, y: -55, w: 12, h: 65}, {x: 140, y: -55, w: 12, h: 65}, {x: 125, y: -55, w: 30, h: 12},
+            // И
+            {x: 175, y: -55, w: 12, h: 65}, {x: 205, y: -55, w: 12, h: 65}, {x: 190, y: -55, w: 25, h: 40},
+            // Я
+            {x: 245, y: -35, w: 30, h: 12}, {x: 245, y: -60, w: 30, h: 12}, {x: 255, y: -45, w: 12, h: 30}, {x: 235, y: -55, w: 12, h: 65}, {x: 255, y: -75, w: 12, h: 30},
+
+            // N
+            {x: -70, y: -140, w: 12, h: 65}, {x: -30, y: -140, w: 12, h: 65}, {x: -50, y: -140, w: 30, h: 65},
+            // E
+            {x: 5, y: -115, w: 35, h: 12}, {x: 0, y: -140, w: 30, h: 12}, {x: 5, y: -165, w: 35, h: 12}, {x: -10, y: -140, w: 12, h: 65},
+            // G
+            {x: 50, y: -115, w: 35, h: 12}, {x: 50, y: -165, w: 35, h: 12}, {x: 35, y: -140, w: 12, h: 65}, {x: 65, y: -150, w: 12, h: 35}, {x: 55, y: -140, w: 20, h: 12},
+            // R
+            {x: 95, y: -140, w: 12, h: 65}, {x: 115, y: -120, w: 30, h: 12}, {x: 115, y: -145, w: 30, h: 12}, {x: 125, y: -132, w: 12, h: 25}, {x: 115, y: -158, w: 20, h: 25},
+            // !
+            {x: 155, y: -130, w: 12, h: 40}, {x: 155, y: -160, w: 12, h: 12}
+        ];
+
+        const line = lines[index % lines.length];
+        const rx = line.x + (Math.random() - 0.5) * line.w;
+        const ry = line.y + (Math.random() - 0.5) * line.h;
+        const rz = (Math.random() - 0.5) * 10;
+        
+        return new THREE.Vector3(rx * scale * 1.3, (ry + 45) * scale * 1.3, rz * scale);
+    }
+
+    function createParticleTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 32; canvas.height = 32;
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+        grad.addColorStop(0, 'rgba(255,255,255,1)');
+        grad.addColorStop(0.2, 'rgba(255,255,255,0.9)');
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 32, 32);
+        return new THREE.CanvasTexture(canvas);
+    }
+
+    function init() {
+        scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x010103, 0.001);
+
+        camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+        camera.position.set(0, 70, 560);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const renderScene = new THREE.RenderPass(scene, camera);
+        const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 2.2, 0.5, 0.85);
+        bloomPass.threshold = 0.0;
+        bloomPass.strength = 2.6; 
+        bloomPass.radius = 0.4;
+
+        composer = new THREE.EffectComposer(renderer);
+        composer.addPass(renderScene);
+        composer.addPass(bloomPass);
+
+        particlesGroup = new THREE.Group();
+        scene.add(particlesGroup);
+
+        const texture = createParticleTexture();
+        const isMobile = window.innerWidth < 768;
+        const currentScale = isMobile ? window.innerWidth * 0.0020 : 1.0;
+
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(PARTICLE_COUNT * 3);
+        const colors = new Float32Array(PARTICLE_COUNT * 3);
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const material = new THREE.PointsMaterial({
+            size: isMobile ? 6 : 8,
+            map: texture,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            vertexColors: true
+        });
+
+        const pointsMesh = new THREE.Points(geometry, material);
+        particlesGroup.add(pointsMesh);
+
+        pointsMesh.userData = { pData: [] };
+
+        const cCake = new THREE.Color(0x00ffcc);  
+        const cCandle = new THREE.Color(0xffffff); 
+        const cFlame = new THREE.Color(0xff3300);  
+        const cText = new THREE.Color(0x00ff5
