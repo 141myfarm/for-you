@@ -110,7 +110,6 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 
 <script>
-    // --- ADVANCED ENGINE ARCHITECTURE STRUC CONFIG ---
     const ENGINE_GLOBAL_PROPERTIES = {
         technical: {
             totalParticles: 45000,
@@ -131,18 +130,17 @@
             shellRetentionRatio: 0.86
         },
         chronology: {
-            galaxyPhaseDuration: 7.5,
-            morphPhaseDuration: 5.5,
-            stabilizationHold: 2.0
+            galaxyPhaseDuration: 6.0,
+            morphPhaseDuration: 5.0,
+            stabilizationHold: 4.0
         },
         vfx: {
-            bloomStrength: 3.4,
-            bloomRadius: 0.65,
-            bloomThreshold: 0.02
+            bloomStrength: 2.5,
+            bloomRadius: 0.7,
+            bloomThreshold: 0.08
         }
     };
 
-    // --- APPLICATION STATE CONTAINER ---
     let appRuntimeContext = {
         sceneInstance: null,
         cameraInstance: null,
@@ -151,84 +149,52 @@
         particleCoreSystem: null,
         clockReference: null,
         epochStartTime: 0,
-        currentPhaseIndex: 0, // 0 = Galaxy, 1 = Morph, 2 = Heart Core Active
+        currentPhaseIndex: 0, 
         internalPhaseTimer: 0.0,
-        ui: {
-            status: null,
-            telemetry: null,
-            loader: null
-        },
+        ui: { status: null, telemetry: null, loader: null },
         interaction: {
-            mouseX: 0,
-            mouseY: 0,
-            targetMouseX: 0,
-            targetMouseY: 0,
-            isDragging: false,
-            previousTouchX: 0,
-            previousTouchY: 0,
-            cameraOrbitRadius: 540.0,
-            phiAngle: 1.35,
-            thetaAngle: 0.0,
-            targetPhi: 1.35,
-            targetTheta: 0.0
+            mouseX: 0, mouseY: 0, targetMouseX: 0, targetMouseY: 0, isDragging: false,
+            previousTouchX: 0, previousTouchY: 0, cameraOrbitRadius: 550.0,
+            phiAngle: 1.35, thetaAngle: 0.0, targetPhi: 1.35, targetTheta: 0.0
         },
-        performanceMetrics: {
-            frameCount: 0,
-            lastFpsUpdate: 0,
-            currentFps: 60
-        }
+        performanceMetrics: { frameCount: 0, lastFpsUpdate: 0, currentFps: 60 }
     };
 
-    // --- MATHEMATICAL MATH CODES SYSTEM ---
     class CosmicMathematicsController {
         static computeParametricHeartVector(evaluationStep) {
             const angleRadian = evaluationStep * Math.PI * 2.0;
-            
-            // Parametric equations for 3D Heart geometry
             const componentX = 16.0 * Math.pow(Math.sin(angleRadian), 3.0);
             const componentY = 13.0 * Math.cos(angleRadian) - 5.0 * Math.cos(2.0 * angleRadian) - 2.0 * Math.cos(3.0 * angleRadian) - Math.cos(4.0 * angleRadian);
-            
-            // Gaussian transformation algorithm for organic depth distribution
             const uniformDistributionA = Math.random();
             const uniformDistributionB = Math.random();
             const coordinateZVariance = Math.sqrt(-2.0 * Math.log(uniformDistributionA)) * Math.cos(Math.PI * 2.0 * uniformDistributionB);
             const componentZ = coordinateZVariance * ENGINE_GLOBAL_PROPERTIES.heartMesh.thicknessGaussianBias;
-
             return new THREE.Vector3(componentX, componentY, componentZ);
         }
 
         static computeProceduralGalaxyVector(particleIndex) {
             const internalConfig = ENGINE_GLOBAL_PROPERTIES.galaxyMesh;
             const targetArmAssignment = particleIndex % internalConfig.armsCount;
-            
             const allocationSplitThreshold = 0.22;
             let targetedRadius;
-            
             if (Math.random() < allocationSplitThreshold) {
                 targetedRadius = Math.pow(Math.random(), 2.0) * (internalConfig.maxRadius * 0.12);
             } else {
                 targetedRadius = Math.pow(Math.random(), internalConfig.coreDensityExponent) * internalConfig.maxRadius;
             }
-            
             const twistingAngleCalculation = targetedRadius * (internalConfig.twistFactor / internalConfig.maxRadius) * Math.PI * 2.0;
             const absoluteArmAngleOffset = (targetArmAssignment / internalConfig.armsCount) * Math.PI * 2.0;
-            
             const cloudSpreadFactor = (1.0 - (targetedRadius / internalConfig.maxRadius)) * 0.42 + 0.03;
             const gasCloudDeviation = (Math.random() - 0.5) * cloudSpreadFactor;
-            
             const combinedThetaAngle = twistingAngleCalculation + absoluteArmAngleOffset + gasCloudDeviation;
-
             const positionX = Math.cos(combinedThetaAngle) * targetedRadius;
             const positionZ = Math.sin(combinedThetaAngle) * targetedRadius;
-            
             const structuralBulgeVerticalSpread = internalConfig.verticalSpreadFactor * Math.exp(-targetedRadius / (internalConfig.maxRadius * 0.28));
             const positionY = (Math.random() - 0.5) * (structuralBulgeVerticalSpread + 3.5);
-
             return new THREE.Vector3(positionX, positionY, positionZ);
         }
     }
 
-    // --- CUSTOM POST-PROCESSING PIPELINE INTERFACES ---
     const HighEndVignetteGrainShader = {
         uniforms: {
             "tDiffuse": { value: null },
@@ -251,109 +217,87 @@
             uniform float uGrainAmount;
             uniform float uTime;
             varying vec2 vUv;
-
             float pseudoRandom(vec2 co) {
                 return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
             }
-
             void main() {
                 vec4 texelColor = texture2D(tDiffuse, vUv);
-                
-                // Vignette computation pass
                 vec2 uvDistortion = vUv - 0.5;
                 float distanceToCenter = length(uvDistortion);
                 float vignetteFactor = smoothstep(uVignetteOffset, uVignetteOffset - uVignetteDarkness, distanceToCenter);
                 texelColor.rgb *= mix(1.0, vignetteFactor, 0.75);
-                
-                // Grain emulation noise calculations
                 float noise = (pseudoRandom(vUv + sin(uTime)) - 0.5) * uGrainAmount;
                 texelColor.rgb += vec3(noise);
-                
                 gl_FragColor = texelColor;
             }
         `
     };
 
-    // --- CORE GLSL GRAPHICS INTERFACES ---
     const ProgrammableGpuEngineShaders = {
+        uniforms: {
+            uTime: { value: 0.0 },
+            uEnginePhase: { value: 0.0 },
+            uPhaseProgress: { value: 0.0 },
+            uTexture: { value: null }
+        },
         vertexShader: `
             uniform float uTime;
             uniform float uPhaseProgress;
             uniform float uEnginePhase;
-            
             attribute vec3 aTargetPosition;
             attribute vec3 aTargetColor;
             attribute vec4 aCustom;
-            
             varying vec3 vColor;
             varying float vPhase;
-            
             vec3 executeHardwareCubicBezierEase(vec3 start, vec3 end, float progression) {
                 float squaredProgression = progression * progression;
                 float optimizedEaseFactor = squaredProgression / (2.0 * (squaredProgression - progression) + 1.0);
                 return mix(start, end, optimizedEaseFactor);
             }
-
             void main() {
                 float scalarSpeedShift = aCustom.x;
                 float basePhaseOffsetRadian = aCustom.y;
                 float pointDimensionScale = aCustom.z;
-                
                 vec3 processingPositionVector = position;
 
                 if (uEnginePhase == 0.0) {
-                    // Stage 0 Calculations: Galaxy Gravitational Mechanics Simulation Loop
                     float radialDistance2D = length(position.xz);
                     float trackingAngularVelocity = (80.0 / (radialDistance2D + 22.0)) * 0.52;
                     float cumulativeRotatedAngle = uTime * trackingAngularVelocity * scalarSpeedShift + basePhaseOffsetRadian;
-                    
                     float initialOrbitalAngle = atan(position.z, position.x);
                     float dynamicallyCalculatedAngle = initialOrbitalAngle + cumulativeRotatedAngle;
-                    
                     processingPositionVector.x = cos(dynamicallyCalculatedAngle) * radialDistance2D;
                     processingPositionVector.z = sin(dynamicallyCalculatedAngle) * radialDistance2D;
-                    
                     float galacticBulgeVibration = exp(-radialDistance2D * 0.04) * sin(uTime * 2.2 + basePhaseOffsetRadian);
                     processingPositionVector.y += galacticBulgeVibration * 5.0;
-                    
                     vColor = color;
                 } 
                 else if (uEnginePhase == 1.0) {
-                    // Stage 1 Calculations: Kinetic Vector Shockwave Morphing Loop
                     float radialDistance2D = length(position.xz);
                     float trackingAngularVelocity = (80.0 / (radialDistance2D + 22.0)) * 0.52;
                     float cumulativeRotatedAngle = (7.5 + uTime) * trackingAngularVelocity * scalarSpeedShift + basePhaseOffsetRadian;
-                    
                     float initialOrbitalAngle = atan(position.z, position.x);
                     float dynamicallyCalculatedAngle = initialOrbitalAngle + cumulativeRotatedAngle;
-                    
                     float localizedVerticalEjection = uPhaseProgress * 155.0 * sin(uPhaseProgress * 3.14159 + basePhaseOffsetRadian * 0.6);
                     vec3 transientGalacticStateVector = vec3(
                         cos(dynamicallyCalculatedAngle) * radialDistance2D,
                         position.y + localizedVerticalEjection,
                         sin(dynamicallyCalculatedAngle) * radialDistance2D
                     );
-                    
                     processingPositionVector = executeHardwareCubicBezierEase(transientGalacticStateVector, aTargetPosition, uPhaseProgress);
                     vColor = mix(color, aTargetColor, uPhaseProgress);
                 } 
                 else if (uEnginePhase == 2.0) {
-                    // Stage 2 Calculations: Harmonic Resonance Wave Generation Loop
                     float rhythmicPulseScalar = sin(uTime * 3.9) * 0.032;
                     processingPositionVector = aTargetPosition * (1.0 + rhythmicPulseScalar);
-                    
                     float complexInterlockingWaveform = sin(uTime * 2.4 + aTargetPosition.y * 0.075 + basePhaseOffsetRadian) * 2.4;
                     processingPositionVector.z += complexInterlockingWaveform;
                     processingPositionVector.x += sin(uTime * 1.15 + basePhaseOffsetRadian) * 0.85;
-                    
                     vColor = aTargetColor;
                 }
-
                 vPhase = uEnginePhase;
-                
                 vec4 intermediateModelViewProjection = modelViewMatrix * vec4(processingPositionVector, 1.0);
                 gl_Position = projectionMatrix * intermediateModelViewProjection;
-                
                 gl_PointSize = (pointDimensionScale * 14.5) / (-intermediateModelViewProjection.z);
             }
         `,
@@ -361,42 +305,28 @@
             varying vec3 vColor;
             varying float vPhase;
             uniform sampler2D uTexture;
-
             void main() {
                 vec4 activeTextureFragmentSample = texture2D(uTexture, gl_PointCoord);
-                
-                if (activeTextureFragmentSample.a < 0.04) {
-                    discard; 
-                }
-
+                if (activeTextureFragmentSample.a < 0.04) { discard; }
                 vec3 localizedCompositeColorMatrix = vColor * activeTextureFragmentSample.rgb;
-                
-                if (vPhase == 1.0) {
-                    localizedCompositeColorMatrix *= 1.35;
-                }
-                
+                if (vPhase == 1.0) { localizedCompositeColorMatrix *= 1.35; }
                 gl_FragColor = vec4(localizedCompositeColorMatrix, activeTextureFragmentSample.a);
             }
         `
     };
 
-    // --- GRAPHICS MEMORY MANAGEMENT FACTORIES ---
     class MemoryBufferAllocationFactory {
         static generateTextureMaskBuffer() {
             const drawingCanvas = document.createElement('canvas');
-            drawingCanvas.width = 64;
-            drawingCanvas.height = 64;
+            drawingCanvas.width = 64; drawingCanvas.height = 64;
             const executionContext2D = drawingCanvas.getContext('2d');
-            
             const radialGradiatingMatrix = executionContext2D.createRadialGradient(32, 32, 0, 32, 32, 32);
             radialGradiatingMatrix.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
             radialGradiatingMatrix.addColorStop(0.18, 'rgba(240, 225, 255, 0.92)');
             radialGradiatingMatrix.addColorStop(0.45, 'rgba(120, 45, 255, 0.32)');
             radialGradiatingMatrix.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
-            
             executionContext2D.fillStyle = radialGradiatingMatrix;
             executionContext2D.fillRect(0, 0, 64, 64);
-            
             const outputGlTexture = new THREE.CanvasTexture(drawingCanvas);
             outputGlTexture.minFilter = THREE.LinearFilter;
             return outputGlTexture;
@@ -405,7 +335,6 @@
         static buildStructuralParticleGeometryMesh() {
             const customStructureGeometry = new THREE.BufferGeometry();
             const configTargetReference = ENGINE_GLOBAL_PROPERTIES;
-            
             const allocationBufferSize = configTargetReference.technical.totalParticles;
             
             const arrayStreamSourcePositions = new Float32Array(allocationBufferSize * 3);
@@ -421,13 +350,11 @@
             const paletteDefinitionHeartLuminescent = new THREE.Color(0xff55b5);
 
             for (let trackerId = 0; trackerId < allocationBufferSize; trackerId++) {
-                // Procedural call to construct galaxy system tracking nodes
                 const operationalGalaxyVector = CosmicMathematicsController.computeProceduralGalaxyVector(trackerId);
                 arrayStreamSourcePositions[trackerId * 3] = operationalGalaxyVector.x;
                 arrayStreamSourcePositions[trackerId * 3 + 1] = operationalGalaxyVector.y;
                 arrayStreamSourcePositions[trackerId * 3 + 2] = operationalGalaxyVector.z;
 
-                // Procedural call to construct heart transformation targets
                 let operationalHeartVector;
                 if (trackerId < allocationBufferSize * configTargetReference.heartMesh.shellRetentionRatio) {
                     operationalHeartVector = CosmicMathematicsController.computeParametricHeartVector(Math.random());
@@ -445,10 +372,8 @@
                 arrayStreamTargetPositions[trackerId * 3 + 1] = operationalHeartVector.y;
                 arrayStreamTargetPositions[trackerId * 3 + 2] = operationalHeartVector.z;
 
-                // Galaxy Color interpolation loop execution
                 const individualDistanceMagnitudeRatio = operationalGalaxyVector.length() / configTargetReference.galaxyMesh.maxRadius;
                 let transientColorContainer = new THREE.Color();
-                
                 if (individualDistanceMagnitudeRatio < 0.12) {
                     transientColorContainer.lerpColors(paletteDefinitionGalaxyCore, paletteDefinitionGalaxyNebula, individualDistanceMagnitudeRatio / 0.12);
                 } else {
@@ -459,15 +384,12 @@
                 arrayStreamInitialColors[trackerId * 3 + 1] = transientColorContainer.g;
                 arrayStreamInitialColors[trackerId * 3 + 2] = transientColorContainer.b;
 
-                // Heart target color field assignment matrices
                 const structuralColorSelectionBias = Math.random() > 0.45 ? paletteDefinitionHeartPrimary : paletteDefinitionHeartLuminescent;
                 const systemicBrightnessVibrancyFactor = 0.82 + Math.random() * 0.18;
-                
                 arrayStreamTargetColors[trackerId * 3] = structuralColorSelectionBias.r * systemicBrightnessVibrancyFactor;
                 arrayStreamTargetColors[trackerId * 3 + 1] = structuralColorSelectionBias.g * systemicBrightnessVibrancyFactor;
                 arrayStreamTargetColors[trackerId * 3 + 2] = structuralColorSelectionBias.b * systemicBrightnessVibrancyFactor;
 
-                // Dynamic vector metadata assignments
                 arrayStreamCustomDynamics[trackerId * 4] = 0.45 + Math.random() * 1.45;        
                 arrayStreamCustomDynamics[trackerId * 4 + 1] = Math.random() * Math.PI * 2.0; 
                 arrayStreamCustomDynamics[trackerId * 4 + 2] = 1.1 + Math.random() * 3.8;        
@@ -479,127 +401,24 @@
             customStructureGeometry.setAttribute('color', new THREE.BufferAttribute(arrayStreamInitialColors, 3));
             customStructureGeometry.setAttribute('aTargetColor', new THREE.BufferAttribute(arrayStreamTargetColors, 3));
             customStructureGeometry.setAttribute('aCustom', new THREE.BufferAttribute(arrayStreamCustomDynamics, 4));
-
             return customStructureGeometry;
         }
     }
 
-    // --- SUBSYSTEM INTERACTIVE MOUSE AND TOUCH INPUT LOGIC ---
     class InteractionInputRoutingSubsystem {
         static registerEventInterfaceListeners() {
             const context = appRuntimeContext.interaction;
-            
             window.addEventListener('mousedown', (e) => {
                 context.isDragging = true;
-                context.previousTouchX = e.clientX;
-                context.previousTouchY = e.clientY;
+                context.previousTouchX = e.clientX; context.previousTouchY = e.clientY;
             }, { passive: true });
 
             window.addEventListener('mousemove', (e) => {
                 if (!context.isDragging) {
-                    // Track hover orientation scalar metrics
                     context.targetMouseX = (e.clientX / window.innerWidth - 0.5) * 40.0;
                     context.targetMouseY = (e.clientY / window.innerHeight - 0.5) * 40.0;
                     return;
                 }
-                
                 const frameDeltaX = e.clientX - context.previousTouchX;
                 const frameDeltaY = e.clientY - context.previousTouchY;
-                
                 context.targetTheta -= frameDeltaX * 0.006;
-                context.targetPhi -= frameDeltaY * 0.006;
-                context.targetPhi = Math.max(0.1, Math.min(Math.PI - 0.1, context.targetPhi));
-                
-                context.previousTouchX = e.clientX;
-                context.previousTouchY = e.clientY;
-            }, { passive: true });
-
-            window.addEventListener('mouseup', () => { context.isDragging = false; }, { passive: true });
-            
-            // Mobile ecosystem hooks
-            window.addEventListener('touchstart', (e) => {
-                if (e.touches.length !== 1) return;
-                context.isDragging = true;
-                context.previousTouchX = e.touches[0].clientX;
-                context.previousTouchY = e.touches[0].clientY;
-            }, { passive: true });
-
-            window.addEventListener('touchmove', (e) => {
-                if (!context.isDragging || e.touches.length !== 1) return;
-                
-                const frameDeltaX = e.touches[0].clientX - context.previousTouchX;
-                const frameDeltaY = e.touches[0].clientY - context.previousTouchY;
-                
-                context.targetTheta -= frameDeltaX * 0.008;
-                context.targetPhi -= frameDeltaY * 0.008;
-                context.targetPhi = Math.max(0.1, Math.min(Math.PI - 0.1, context.targetPhi));
-                
-                context.previousTouchX = e.touches[0].clientX;
-                context.previousTouchY = e.touches[0].clientY;
-            }, { passive: true });
-
-            window.addEventListener('touchend', () => { context.isDragging = false; }, { passive: true });
-        }
-    }
-
-    // --- MAIN ENGINE LIFECYCLE CONTROLLER ---
-    class CoreEngineLifecycleController {
-        static setupEngineInfrastructure() {
-            // Document structure maps references allocation
-            appRuntimeContext.ui.status = document.getElementById('engine-status');
-            appRuntimeContext.ui.telemetry = document.getElementById('engine-telemetry');
-            appRuntimeContext.ui.loader = document.getElementById('loader-screen');
-            
-            appRuntimeContext.clockReference = new THREE.Clock();
-            appRuntimeContext.epochStartTime = Date.now();
-
-            // Construct Three.JS Core Frame
-            appRuntimeContext.sceneInstance = new THREE.Scene();
-            appRuntimeContext.sceneInstance.fog = new THREE.FogExp2(0x010103, 0.0005);
-
-            // Establish 3D Projection Lens Matrix Properties
-            appRuntimeContext.cameraInstance = new THREE.PerspectiveCamera(
-                60, 
-                window.innerWidth / window.innerHeight, 
-                1.0, 
-                4000.0
-            );
-            appRuntimeContext.cameraInstance.position.set(0, 240, 540);
-
-            // Hardware GL Instantiation Pass
-            appRuntimeContext.webglRenderer = new THREE.WebGLRenderer({
-                antialias: false,
-                powerPreference: "high-performance",
-                alpha: false,
-                stencil: false,
-                depth: true
-            });
-            appRuntimeContext.webglRenderer.setPixelRatio(Math.min(window.devicePixelRatio, ENGINE_GLOBAL_PROPERTIES.technical.devicePixelRatioLimit));
-            appRuntimeContext.webglRenderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(appRuntimeContext.webglRenderer.domElement);
-
-            // Establish Complex Layer Post Compositor Core
-            const coreSceneRenderPass = new THREE.RenderPass(appRuntimeContext.sceneInstance, appRuntimeContext.cameraInstance);
-            
-            const parametersReferenceVfx = ENGINE_GLOBAL_PROPERTIES.vfx;
-            const highLuminosityBloomPass = new THREE.UnrealBloomPass(
-                new THREE.Vector2(window.innerWidth, window.innerHeight),
-                parametersReferenceVfx.bloomStrength,
-                parametersReferenceVfx.bloomRadius,
-                parametersReferenceVfx.bloomThreshold
-            );
-
-            // Allocation pass for Custom Vignette & Film grain shader pass step
-            const vignetteGrainProcessingPass = new THREE.ShaderPass(HighEndVignetteGrainShader);
-
-            appRuntimeContext.effectComposer = new THREE.EffectComposer(appRuntimeContext.webglRenderer);
-            appRuntimeContext.effectComposer.addPass(coreSceneRenderPass);
-            appRuntimeContext.effectComposer.addPass(highLuminosityBloomPass);
-            appRuntimeContext.effectComposer.addPass(vignetteGrainProcessingPass);
-
-            // Asset streaming compilation allocation passes
-            const combinedParticleAttributesGeometry = MemoryBufferAllocationFactory.buildStructuralParticleGeometryMesh();
-            
-            const uniformPipelineMappings = {
-                uTime: { value: 0.0 },
-                uEnginePhase: { value: 0.0 },
