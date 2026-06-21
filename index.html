@@ -131,4 +131,120 @@
 
             // Сердечные координаты
             const heartPos = getHeartPoint(t, u, currentHeartScale);
-            heart
+            heartPos.y += (isMobile ? 15 : 0); // Центровка по вертикали
+
+            // Вихревые координаты
+            const vortexPos = getRandomVortexPoint(280, 160);
+
+            // Смесь цветов: от ярко-неонового розового до сочного красного
+            const material = new THREE.MeshBasicMaterial({
+                map: texture,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                side: THREE.DoubleSide
+            });
+            
+            const colorBias = Math.random();
+            material.color.lerpColors(new THREE.Color(0xff2266), new THREE.Color(0xff0033), colorBias);
+
+            const mesh = new THREE.Mesh(planeGeometry, material);
+            mesh.position.copy(vortexPos);
+
+            // Сохраняем все данные в память меша
+            mesh.userData = {
+                heart: heartPos.clone(),
+                vortex: vortexPos.clone(),
+                current: vortexPos.clone(),
+                speedShift: Math.random() * 0.5 + 0.5
+            };
+
+            particlesGroup.add(mesh);
+        }
+
+        window.addEventListener('resize', onWindowResize, false);
+    }
+
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        composer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+
+        const elapsed = (Date.now() - startTime) / 1000;
+        const delta = 0.016;
+
+        // Тайминги смены фаз
+        if (state.phase === 'vortex' && elapsed > 6) {
+            state.phase = 'assemble';
+            state.timeInPhase = 0;
+        } else if (state.phase === 'assemble' && state.timeInPhase > 5) {
+            state.phase = 'heartbeat';
+            state.timeInPhase = 0;
+        }
+        state.timeInPhase += delta;
+
+        // Реалистичный двойной стук сердца
+        if (state.phase === 'heartbeat') {
+            const beatTime = elapsed * 1.4;
+            state.beatFactor = Math.pow(Math.sin(beatTime * Math.PI), 14) * 0.10 + 
+                               Math.pow(Math.sin(beatTime * Math.PI - Math.PI/4), 24) * 0.06;
+        }
+
+        particlesGroup.children.forEach((mesh) => {
+            const data = mesh.userData;
+            const p = mesh.position;
+
+            if (state.phase === 'vortex') {
+                // Фаза 1: Текст плавно вращается по кругу вокруг центра сцены
+                const angle = 0.008 * data.speedShift;
+                const oldX = p.x;
+                p.x = p.x * Math.cos(angle) - p.z * Math.sin(angle);
+                p.z = oldX * Math.sin(angle) + p.z * Math.cos(angle);
+                p.y += Math.sin(elapsed * 2 + data.speedShift) * 0.15;
+                
+                // В вихре буквы слегка крутятся вокруг своей оси
+                mesh.rotation.y = elapsed * data.speedShift;
+            } 
+            else if (state.phase === 'assemble') {
+                // Фаза 2: Плавный сбор в сердце
+                let speed = Math.min(state.timeInPhase / 3, 1) * 0.06;
+                p.lerp(data.heart, speed);
+                
+                // Разворачиваем слова ровно к камере, чтобы их было легко читать
+                mesh.rotation.set(0, 0, 0);
+                mesh.lookAt(camera.position);
+            }
+            else if (state.phase === 'heartbeat') {
+                // Фаза 3: Пульсация
+                const pulseScale = 1 + state.beatFactor;
+                const target = data.heart.clone().multiplyScalar(pulseScale);
+                p.copy(target);
+                
+                mesh.rotation.set(0, 0, 0);
+                mesh.lookAt(camera.position);
+            }
+        });
+
+        // Плавный поворот всей сцены для 3D глубины
+        if (state.phase !== 'vortex') {
+            particlesGroup.rotation.y = Math.sin(elapsed * 0.2) * 0.15;
+        } else {
+            particlesGroup.rotation.y = elapsed * 0.03;
+        }
+
+        composer.render();
+    }
+
+    window.onload = () => {
+        init();
+        animate();
+    };
+</script>
+
+</body>
+</html>
