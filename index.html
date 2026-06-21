@@ -2,183 +2,362 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Amazing Love Animation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D Particle Heart Continuum</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
-            background-color: #050510; /* Глубокий космический черный */
+            background: radial-gradient(circle at center, #1a0a2a 0%, #050505 100%);
+            width: 100vw;
+            height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: white;
+            font-family: sans-serif;
         }
         canvas {
             display: block;
+            width: 100% !important;
+            height: 100% !important;
+        }
+        #loader {
+            position: absolute;
+            font-size: 1.2rem;
+            letter-spacing: 0.1em;
+            opacity: 0.8;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 0.4; }
+            50% { opacity: 0.9; }
+            100% { opacity: 0.4; }
         }
     </style>
 </head>
 <body>
 
-<canvas id="animationCanvas"></canvas>
+<div id="loader">ИНСТАЛЛЯЦИЯ ЗАГРУЖАЕТСЯ...</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 
 <script>
-    const canvas = document.getElementById('animationCanvas');
-    const ctx = canvas.getContext('2d');
+    // --- ОСНОВНЫЕ НАСТРОЙКИ ---
+    let scene, camera, renderer, composer;
+    let heartGeometry, particles, dust;
+    let startTime;
+    const PARTICLE_COUNT = 15000; // Количество частиц (сердец)
+    const HEART_SCALE = 15;
+    const STAR_COUNT = 1000;
 
-    function resize() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+    // Цветовая палитра
+    const colors = {
+        main: 0xff3366, // Яркий неоновый розовый
+        accent: 0xffcc00, // Золотой акцент
+        bg: 0x050505,
+        dust: 0x444444
+    };
+
+    // Состояния анимации
+    let state = {
+        phase: 'vortex', // vortex -> assemble -> heartbeat
+        timeInPhase: 0,
+        beatFactor: 0
+    };
+
+    // Математическая функция для 3D формы сердца
+    function getHeartPoint(t, u, scale) {
+        // Параметрическое уравнение 3D сердца
+        const x = 16 * Math.pow(Math.sin(t), 3) * Math.sin(u);
+        const y = (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t)) * Math.sin(u);
+        const z = 15 * Math.cos(u); // Глубина
+        return new THREE.Vector3(x * scale, y * scale, z * scale);
     }
-    window.addEventListener('resize', resize);
-    resize();
 
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
-    
-    // Настройки частиц
-    const particles = [];
-    const word = "I love you";
-    const totalParticles = 250; 
-
-    // Формула сердца для целевых точек
-    function getHeartPoint(t, scale) {
-        let x = 16 * Math.pow(Math.sin(t), 3);
-        let y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
-        return { x: x * scale, y: -y * scale }; // инвертируем Y для экрана
+    // Вспомогательная функция для случайных точек в торе (для вихря)
+    function getRandomTorusPoint(r1, r2) {
+        const t = Math.random() * Math.PI * 2;
+        const u = Math.random() * Math.PI * 2;
+        const x = (r1 + r2 * Math.cos(u)) * Math.cos(t);
+        const y = (r1 + r2 * Math.cos(u)) * Math.sin(t);
+        const z = r2 * Math.sin(u);
+        return new THREE.Vector3(x, y, z);
     }
 
-    // Инициализация частиц
-    for (let i = 0; i < totalParticles; i++) {
-        let t = (i / totalParticles) * Math.PI * 2;
-        // Целевая точка на сердце
-        let heartTarget = getHeartPoint(t, Math.min(canvas.width, canvas.height) * 0.022);
+    function init() {
+        // Убираем лоадер
+        document.getElementById('loader').style.display = 'none';
+        startTime = Date.now();
+
+        // 1. Сцена и Камера
+        scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x100a1a, 0.002); // Космическая дымка
+
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        camera.position.z = 500;
+
+        // 2. Рендерер
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Баланс качества и производительности
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(colors.bg, 1);
+        document.body.appendChild(renderer.domElement);
+
+        // 3. ПОСТ-ОБРАБОТКА (Магия Bloom/Свечения)
+        const renderScene = new THREE.RenderPass(scene, camera);
+        const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloomPass.threshold = 0.1; // Порог свечения
+        bloomPass.strength = 1.8;   // Сила свечения
+        bloomPass.radius = 0.6;     // Радиус размытия
+
+        composer = new THREE.EffectComposer(renderer);
+        composer.addPass(renderScene);
+        composer.addPass(bloomPass);
+
+        // 4. ГЕОМЕТРИЯ ЧАСТИЦ (Тысячи сердец)
         
-        particles.push({
-            // Начальная позиция (в центре для первого появления)
-            x: centerX,
-            y: centerY,
-            // Цель на этапе сердца
-            targetX: centerX + heartTarget.x,
-            targetY: centerY + heartTarget.y,
-            // Скорости для взрыва
-            vx: 0,
-            vy: 0,
-            // Случайный размер шрифта для динамики
-            size: Math.random() * 6 + 8,
-            // Индивидуальный оттенок неонового розового/фиолетового
-            color: `hsla(${340 + Math.random() * 40}, 100%, 65%, `, 
-            angle: Math.random() * Math.PI * 2,
-            spin: (Math.random() - 0.5) * 0.05,
-            alpha: 0
+        // Создаем форму маленького сердца для каждой частицы
+        const heartShape = new THREE.Shape();
+        const x = 0, y = 0;
+        heartShape.moveTo( x + 5, y + 5 );
+        heartShape.bezierCurveTo( x + 5, y + 5, x + 4, y, x, y );
+        heartShape.bezierCurveTo( x - 6, y, x - 6, y + 7,x - 6, y + 7 );
+        heartShape.bezierCurveTo( x - 6, y + 11, x - 3, y + 15.4, x + 5, y + 19 );
+        heartShape.bezierCurveTo( x + 12, y + 15.4, x + 16, y + 11, x + 16, y + 7 );
+        heartShape.bezierCurveTo( x + 16, y + 7, x + 16, y, x + 10, y );
+        heartShape.bezierCurveTo( x + 7, y, x + 5, y + 5, x + 5, y + 5 );
+
+        const heartGeometry = new THREE.ShapeGeometry(heartShape);
+        
+        // Материал с использованием InstanceMesh для производительности
+        const material = new THREE.MeshBasicMaterial({
+            color: colors.main,
+            side: THREE.DoubleSide,
+            transparent: true,
+            blending: THREE.AdditiveBlending, // Сложение цветов для свечения
+            depthWrite: false
         });
+
+        particles = new THREE.InstancedMesh(heartGeometry, material, PARTICLE_COUNT);
+        scene.add(particles);
+
+        // Инициализация данных частиц
+        particles.userData.phases = []; // Сохраняем позиции для разных фаз
+
+        const matrix = new THREE.Matrix4();
+        const color = new THREE.Color();
+        const tempQuaternion = new THREE.Quaternion();
+        const tempEuler = new THREE.Euler();
+
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+            // -- Точка для фазы сердца --
+            const t = Math.random() * Math.PI * 2;
+            const u = Math.random() * Math.PI;
+            const heartPos = getHeartPoint(t, u, HEART_SCALE);
+            
+            // Добавляем шум для органичности
+            heartPos.x += (Math.random() - 0.5) * 15;
+            heartPos.y += (Math.random() - 0.5) * 15;
+            heartPos.z += (Math.random() - 0.5) * 10;
+
+            // -- Точка для фазы вихря --
+            const vortexPos = getRandomTorusPoint(250, 80);
+
+            // Сохраняем данные
+            particles.userData.phases.push({
+                heart: heartPos.clone(),
+                vortex: vortexPos.clone(),
+                current: vortexPos.clone(), // Начинаем с вихря
+                velocity: new THREE.Vector3(
+                    (Math.random() - 0.5) * 2,
+                    (Math.random() - 0.5) * 2,
+                    (Math.random() - 0.5) * 2
+                ),
+                baseScale: Math.random() * 0.15 + 0.05,
+                colorBias: Math.random() // Для вариации цвета
+            });
+
+            // Начальная установка матрицы (в вихре)
+            matrix.makeTranslation(vortexPos.x, vortexPos.y, vortexPos.z);
+            
+            // Случайный поворот
+            tempEuler.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+            tempQuaternion.setFromEuler(tempEuler);
+            matrix.makeRotationFromQuaternion(tempQuaternion);
+            matrix.setPosition(vortexPos);
+            
+            // Устанавливаем масштаб
+            const s = particles.userData.phases[i].baseScale;
+            matrix.scale(new THREE.Vector3(s, s, s));
+
+            particles.setMatrixAt(i, matrix);
+
+            // Устанавливаем цвет (смесь розового и золотого)
+            color.lerpColors(new THREE.Color(colors.main), new THREE.Color(colors.accent), particles.userData.phases[i].colorBias * 0.3);
+            particles.setColorAt(i, color);
+        }
+
+        // 5. КОСМИЧЕСКАЯ ПЫЛЬ (Фон)
+        const dustGeometry = new THREE.BufferGeometry();
+        const dustCoords = [];
+        for (let i = 0; i < STAR_COUNT; i++) {
+            dustCoords.push(
+                (Math.random() - 0.5) * 1500,
+                (Math.random() - 0.5) * 1500,
+                (Math.random() - 0.5) * 1000
+            );
+        }
+        dustGeometry.setAttribute('position', new THREE.Float32BufferAttribute(dustCoords, 3));
+        const dustMaterial = new THREE.PointsMaterial({ color: colors.dust, size: 2, transparent: true, opacity: 0.5 });
+        dust = new THREE.Points(dustGeometry, dustMaterial);
+        scene.add(dust);
+
+        // Событие ресайза
+        window.addEventListener('resize', onWindowResize, false);
     }
 
-    let startTime = Date.now();
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        composer.setSize(window.innerWidth, window.innerHeight);
+    }
 
     function animate() {
-        // Эффект шлейфа (motion blur) — не стираем экран полностью
-        ctx.fillStyle = 'rgba(5, 5, 16, 0.12)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        requestAnimationFrame(animate);
 
-        let elapsed = (Date.now() - startTime) / 1000; // Время в секундах
+        const elapsed = (Date.now() - startTime) / 1000;
+        const delta = 0.016; // Примерный fixed timestep для плавности физики
 
-        // --- ФАЗА 1: Появление надписи (0 - 4 сек) ---
-        if (elapsed < 4) {
-            let alpha = Math.min(elapsed / 2, 1); // плавное появление
-            let pulse = 1 + Math.sin(elapsed * 2) * 0.03; // легкое дыхание текста
+        // Управление фазами
+        if (state.phase === 'vortex' && elapsed > 8) {
+            state.phase = 'assemble';
+            state.timeInPhase = 0;
+        } else if (state.phase === 'assemble' && state.timeInPhase > 6) {
+            state.phase = 'heartbeat';
+            state.timeInPhase = 0;
+        }
+        state.timeInPhase += delta;
+
+        // Расчет фактора пульсации (сердцебиение)
+        if (state.phase === 'heartbeat') {
+            // Формула для двойного удара сердца
+            const beatTime = elapsed * 1.8;
+            state.beatFactor = Math.pow(Math.sin(beatTime * Math.PI), 10) * 0.12 + 
+                                Math.pow(Math.sin(beatTime * Math.PI - Math.PI/4), 20) * 0.08;
+        }
+
+        // Обновление частиц
+        const matrix = new THREE.Matrix4();
+        const tempQuaternion = new THREE.Quaternion();
+        const tempEuler = new THREE.Euler();
+        const center = new THREE.Vector3(0, 0, 0);
+
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+            const data = particles.userData.phases[i];
+            const p = data.current;
             
-            ctx.save();
-            ctx.font = `bold ${50 * pulse}px Arial`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
+            let target = new THREE.Vector3();
+            let speedFactor = 1;
+
+            if (state.phase === 'vortex') {
+                // Движение в вихре (вращение + легкое притяжение к центру тора)
+                const targetVortex = data.vortex;
+                const distToTorus = p.distanceTo(targetVortex);
+                
+                // Вращение вокруг оси Y
+                const angle = 0.005;
+                const oldX = p.x;
+                p.x = p.x * Math.cos(angle) - p.z * Math.sin(angle);
+                p.z = oldX * Math.sin(angle) + p.z * Math.cos(angle);
+                
+                // Легкое покачивание
+                p.y += Math.sin(elapsed * 2 + i) * 0.2;
+                
+                // Плавное возвращение к форме тора
+                p.lerp(targetVortex, 0.01);
+                speedFactor = 0; // Не используем прямое движение
+            } 
+            else if (state.phase === 'assemble') {
+                // Активная сборка в сердце
+                target = data.heart.clone();
+                speedFactor = Math.min(state.timeInPhase / 3, 1) * 0.06; // Ускоряемся со временем
+                p.lerp(target, speedFactor);
+            }
+            else if (state.phase === 'heartbeat') {
+                // Режим пульсации
+                const baseHeart = data.heart;
+                // Применяем пульсацию к целевой позиции
+                const pulseScale = 1 + state.beatFactor;
+                target = baseHeart.clone().multiplyScalar(pulseScale);
+                
+                // Жесткое следование за целью
+                p.copy(target);
+            }
+
+            // Обновляем матрицу трансформации
+            matrix.identity();
             
-            // Крутой неоновый градиент и свечение
-            ctx.shadowBlur = 25;
-            ctx.shadowColor = "#ff2a6d";
-            ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-            ctx.fillText(word, centerX, centerY);
-            ctx.restore();
+            // Вращение частиц: выравниваем их "лицом" к камере в фазе сердца, 
+            // или хаотично в фазе вихря
+            if (state.phase !== 'vortex') {
+                // Плавно выравниваем ориентацию к камере
+                matrix.lookAt(p, camera.position, camera.up);
+            } else {
+                // Хаотичное вращение в вихре
+                tempEuler.set(elapsed * (1 + data.colorBias), elapsed * data.colorBias, 0);
+                tempQuaternion.setFromEuler(tempEuler);
+                matrix.makeRotationFromQuaternion(tempQuaternion);
+            }
+            
+            matrix.setPosition(p);
+            
+            // Масштабирование: базовый + пульсация в фазе сердца
+            let s = data.baseScale;
+            if (state.phase === 'heartbeat') {
+                s *= (1 + state.beatFactor * 0.5); // Легкое изменение размера частиц
+            }
+            // Плавное появление/исчезновение при смене фаз
+            if (state.phase === 'assemble') {
+                s *= Math.min(state.timeInPhase / 2, 1);
+            }
+            matrix.scale(new THREE.Vector3(s, s, s));
+
+            particles.setMatrixAt(i, matrix);
+        }
+        particles.instanceMatrix.needsUpdate = true;
+
+        // Вращение всей сцены для глубины
+        if (state.phase !== 'vortex') {
+            scene.rotation.y = elapsed * 0.1;
+            scene.rotation.x = Math.sin(elapsed * 0.3) * 0.05;
+        } else {
+            scene.rotation.y = elapsed * 0.02; // Медленное вращение вихря
         }
         
-        // --- ТРИГГЕР ВЗРЫВА (ровно на 4 секунде) ---
-        if (elapsed >= 4 && elapsed < 4.1) {
-            particles.forEach(p => {
-                let angle = Math.random() * Math.PI * 2;
-                let speed = Math.random() * 12 + 5;
-                p.vx = Math.sin(angle) * speed;
-                p.vy = Math.cos(angle) * speed;
-                p.alpha = 1;
-            });
-        }
+        // Движение пыли
+        dust.rotation.y += 0.0005;
+        dust.position.z = Math.sin(elapsed * 0.1) * 50;
 
-        // --- ФАЗА 2, 3, 4: Жизнь частиц (после 4 секунд) ---
-        if (elapsed >= 4) {
-            particles.forEach(p => {
-                ctx.save();
-                ctx.font = `${p.size}px monospace`;
-                ctx.textAlign = "center";
-                
-                // Свечение для каждой летящей буковки
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = "#ff2a6d";
-
-                if (elapsed < 5.5) {
-                    // Разлет взрыва
-                    p.x += p.vx;
-                    p.y += p.vy;
-                    p.vx *= 0.98; // сопротивление среды
-                    p.vy *= 0.98;
-                    p.angle += p.spin;
-                } 
-                else if (elapsed >= 5.5 && elapsed < 12) {
-                    // Плавное притяжение к сердцу (магнитный эффект)
-                    let dx = p.targetX - p.x;
-                    let dy = p.targetY - p.y;
-                    p.x += dx * 0.03; // скорость сборки
-                    p.y += dy * 0.03;
-                    p.angle *= 0.95; // выравнивание текста ровно
-                } 
-                else if (elapsed >= 12 && elapsed < 18) {
-                    // Сердце бьется
-                    let beat = 1 + Math.sin(elapsed * 4.5) * 0.04;
-                    let curTargetX = centerX + (p.targetX - centerX) * beat;
-                    let curTargetY = centerY + (p.targetY - centerY) * beat;
-                    p.x += (curTargetX - p.x) * 0.2;
-                    p.y += (curTargetY - p.y) * 0.2;
-                }
-                else if (elapsed >= 18) {
-                    // Растворение в конце
-                    p.alpha -= 0.015;
-                    p.y -= 0.5; // частицы улетают вверх как дым
-                }
-
-                ctx.translate(p.x, p.y);
-                ctx.rotate(p.angle);
-                ctx.fillStyle = p.color + Math.max(p.alpha, 0) + ")";
-                ctx.fillText(word, 0, 0);
-                ctx.restore();
-            });
-        }
-
-        // Перезапуск анимации по кругу через 21 секунду
-        if (elapsed > 21) {
-            startTime = Date.now();
-            particles.forEach(p => {
-                p.x = centerX;
-                p.y = centerY;
-                p.alpha = 0;
-                p.angle = Math.random() * Math.PI * 2;
-            });
-        }
-
-        requestAnimationFrame(animate);
+        // Рендеринг с эффектами
+        composer.render();
     }
 
-    // Запуск через долю секунды, чтобы холст успел инициализироваться
-    setTimeout(animate, 100);
+    // Запускаем всё после загрузки страницы
+    window.onload = () => {
+        // Небольшая задержка для красоты
+        setTimeout(() => {
+            init();
+            animate();
+        }, 1500);
+    };
 </script>
 
 </body>
