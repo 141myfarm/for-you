@@ -1,20 +1,18 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Космическая Галактика 🌌</title>
+    <title>Cosmic Singularity & Heart Engine</title>
     <style>
-        * { box-sizing: border-box; }
-        body {
+        html, body {
             margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
             overflow: hidden;
-            background: #020205;
-            width: 100vw;
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            background-color: #020204;
+            font-family: sans-serif;
         }
         canvas {
             position: absolute;
@@ -23,10 +21,26 @@
             width: 100% !important;
             height: 100% !important;
             display: block;
+            z-index: 1;
+        }
+        #loader {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 12px;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            pointer-events: none;
+            z-index: 2;
+            transition: opacity 1s ease;
         }
     </style>
 </head>
 <body>
+
+<div id="loader">Initializing Cosmos...</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
@@ -37,236 +51,78 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 
 <script>
-    let scene, camera, renderer, composer, particleSystem;
-    let startTime = Date.now();
-    const PARTICLE_COUNT = 15000; 
-
-    let state = {
-        phase: 'galaxy', // 'galaxy' -> 'morph' -> 'heart'
-        timeInPhase: 0
+    // --- ENGINE CONFIGURATION ---
+    const CONFIG = {
+        particleCount: 45000,
+        galaxyBranches: 3,
+        galaxyRadius: 260.0,
+        galaxySpin: 0.8,
+        heartScale: 12.0,
+        timeline: {
+            galaxyDuration: 7.0,
+            morphDuration: 5.0,
+            heartDuration: 10.0
+        }
     };
 
-    // Математическая формула сердца
-    function getHeartPoint(t, scale) {
-        t = t * Math.PI * 2;
-        const x = 16 * Math.pow(Math.sin(t), 3);
-        const y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
-        return new THREE.Vector3(x * scale, y * scale, (Math.random() - 0.5) * 10 * scale);
-    }
+    // --- GLOBAL ENGINE STATE ---
+    let scene, camera, renderer, composer;
+    let particleSystem;
+    let clock, startTime;
+    let currentPhase = 0; // 0: Galaxy, 1: Morphing, 2: Heart Active
+    let phaseTimer = 0.0;
 
-    // Логарифмическая спираль галактики вокруг черной дыры
-    function getGalaxyPoint(index, scale) {
-        const branches = 3; 
-        const branch = index % branches;
-        const radius = Math.pow(Math.random(), 2) * 220 + 15; 
-        const angle = radius * 0.04 + (branch * (Math.PI * 2 / branches)) + (Math.random() - 0.5) * 0.2;
-
-        const x = Math.cos(angle) * radius * scale;
-        const z = Math.sin(angle) * radius * scale;
-        const y = (Math.random() - 0.5) * 8 * scale * (1.0 - radius / 220); 
+    // --- MATHEMATICAL FORMULAS & GENERATORS ---
+    function computeHeartGeometry(t) {
+        t = t * Math.PI * 2.0;
+        // Classical 3D parametric heart formulation
+        const x = 16.0 * Math.pow(Math.sin(t), 3.0);
+        const y = 13.0 * Math.cos(t) - 5.0 * Math.cos(2.0 * t) - 2.0 * Math.cos(3.0 * t) - Math.cos(4.0 * t);
+        
+        // Distribute thickness using a gaussian-inspired random Z displacement
+        const u = Math.random();
+        const v = Math.random();
+        const zDistribution = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(Math.PI * 2.0 * v);
+        const z = zDistribution * 3.5;
 
         return new THREE.Vector3(x, y, z);
     }
 
-    function createParticleTexture() {
-        const canvas = document.createElement('canvas');
-        canvas.width = 32; canvas.height = 32;
-        const ctx = canvas.getContext('2d');
-        const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
-        grad.addColorStop(0, 'rgba(255,255,255,1)');
-        grad.addColorStop(0.3, 'rgba(255,255,255,0.8)');
-        grad.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, 32, 32);
-        return new THREE.CanvasTexture(canvas);
+    function computeGalaxyGeometry(index, totalCount) {
+        const branchIndex = index % CONFIG.galaxyBranches;
+        
+        // Exponential distribution for deep core concentration (Black Hole effect)
+        const coreRatio = 0.25;
+        let radius;
+        if (Math.random() < coreRatio) {
+            radius = Math.pow(Math.random(), 2.0) * (CONFIG.galaxyRadius * 0.15);
+        } else {
+            radius = Math.pow(Math.random(), 2.5) * CONFIG.galaxyRadius;
+        }
+        
+        // Angular offset calculation mimicking spiral nebula density waves
+        const spinAngle = radius * (CONFIG.galaxySpin / CONFIG.galaxyRadius) * Math.PI * 2.0;
+        const branchAngle = (branchIndex / CONFIG.galaxyBranches) * Math.PI * 2.0;
+        
+        // Gas cloud dispersion calculations
+        const dispersionFactor = (1.0 - (radius / CONFIG.galaxyRadius)) * 0.45 + 0.02;
+        const radialSpread = (Math.random() - 0.5) * dispersionFactor;
+        const theta = spinAngle + branchAngle + radialSpread;
+
+        const x = Math.cos(theta) * radius;
+        const z = Math.sin(theta) * radius;
+        
+        // Flattening ratio based on structural distance from galactic bulge
+        const verticalFlattening = 40.0 * Math.exp(-radius / (CONFIG.galaxyRadius * 0.3));
+        const y = (Math.random() - 0.5) * (verticalFlattening + 4.0);
+
+        return new THREE.Vector3(x, y, z);
     }
 
-    function init() {
-        scene = new THREE.Scene();
-        camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-        camera.position.set(0, 180, 450);
-        camera.lookAt(0, 0, 0);
-
-        renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
-
-        const renderScene = new THREE.RenderPass(scene, camera);
-        const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 2.5, 0.4, 0.85);
-        bloomPass.threshold = 0.0;
-        bloomPass.strength = 2.8; 
-        bloomPass.radius = 0.5;
-
-        composer = new THREE.EffectComposer(renderer);
-        composer.addPass(renderScene);
-        composer.addPass(bloomPass);
-
+    function generateParticleData() {
         const geometry = new THREE.BufferGeometry();
-        const positions = new Float32Array(PARTICLE_COUNT * 3);
-        const colors = new Float32Array(PARTICLE_COUNT * 3);
-
-        const isMobile = window.innerWidth < 768;
-        const scale = isMobile ? 7.0 : 11.0;
-        const galaxyScale = isMobile ? 1.1 : 1.6;
-
-        const pData = [];
-        const colorGalaxyCenter = new THREE.Color(0x00ffff);
-        const colorGalaxyEdge = new THREE.Color(0x3300aa);
-        const colorHeart = new THREE.Color(0xff0055);
-
-        for (let i = 0; i < PARTICLE_COUNT; i++) {
-            const galPos = getGalaxyPoint(i, galaxyScale);
-            const rDist = galPos.length() / (220 * galaxyScale);
-            const galColor = colorGalaxyCenter.clone().lerp(colorGalaxyEdge, rDist * 0.9);
-
-            let heartTarget;
-            if (i < PARTICLE_COUNT * 0.85) {
-                heartTarget = getHeartPoint(Math.random(), scale);
-            } else {
-                const angle = Math.random() * Math.PI * 2;
-                const r = (20 + Math.random() * 120) * scale * 0.15;
-                heartTarget = new THREE.Vector3(Math.cos(angle) * r, Math.sin(angle) * r, (Math.random() - 0.5) * 80);
-            }
-
-            positions[i*3] = galPos.x;
-            positions[i*3+1] = galPos.y;
-            positions[i*3+2] = galPos.z;
-
-            colors[i*3] = galColor.r;
-            colors[i*3+1] = galColor.g;
-            colors[i*3+2] = galColor.b;
-
-            pData.push({
-                galPos: galPos,
-                heartPos: heartTarget,
-                curPos: galPos.clone(),
-                galColor: galColor,
-                heartColor: colorHeart.clone().multiplyScalar(0.7 + Math.random() * 0.3),
-                speedShift: Math.random() * 0.5 + 0.5
-            });
-        }
-
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-        const material = new THREE.PointsMaterial({
-            size: isMobile ? 4.5 : 6.0,
-            map: createParticleTexture(),
-            transparent: true,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            vertexColors: true
-        });
-
-        particleSystem = new THREE.Points(geometry, material);
-        particleSystem.userData = { pData: pData };
-        scene.add(particleSystem);
-
-        window.addEventListener('resize', onWindowResize);
-    }
-
-    function onWindowResize() {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        composer.setSize(window.innerWidth, window.innerHeight);
-    }
-
-    function animate() {
-        requestAnimationFrame(animate);
-
-        const elapsed = (Date.now() - startTime) / 1000;
-        const delta = 0.016;
-
-        if (state.phase === 'galaxy' && elapsed > 6.0) {
-            state.phase = 'morph';
-            state.timeInPhase = 0;
-        } else if (state.phase === 'morph' && state.timeInPhase > 4.0) {
-            state.phase = 'heart';
-            state.timeInPhase = 0;
-        }
-        state.timeInPhase += delta;
-
-        const positions = particleSystem.geometry.attributes.position.array;
-        const colors = particleSystem.geometry.attributes.color.array;
-        const pData = particleSystem.userData.pData;
-
-        pData.forEach((p, i) => {
-            if (state.phase === 'galaxy') {
-                const rDist = p.galPos.length();
-                const rotSpeed = (50 / (rDist + 20)) * 0.4;
-                const angle = elapsed * rotSpeed * p.speedShift;
-                
-                const origAngle = Math.atan2(p.galPos.z, p.galPos.x);
-                const newAngle = origAngle + angle;
-                
-                p.curPos.x = Math.cos(newAngle) * rDist;
-                p.curPos.z = Math.sin(newAngle) * rDist;
-            } 
-            else if (state.phase === 'morph') {
-                const t = Math.min(state.timeInPhase / 4.0, 1.0);
-                const ease = t * t * (3.0 - 2.0 * t); 
-
-                const rDist = p.galPos.length();
-                const rotSpeed = (50 / (rDist + 20)) * 0.4;
-                const angle = (6.0 + state.timeInPhase) * rotSpeed * p.speedShift;
-                const origAngle = Math.atan2(p.galPos.z, p.galPos.x);
-                const newAngle = origAngle + angle;
-
-                const spiralX = Math.cos(newAngle) * rDist;
-                const spiralZ = Math.sin(newAngle) * rDist;
-                const spiralY = p.galPos.y + ease * 80;
-
-                const tempGalaxyPos = new THREE.Vector3(spiralX, spiralY, spiralZ);
-                p.curPos.lerpVectors(tempGalaxyPos, p.heartPos, ease);
-
-                colors[i*3] = THREE.MathUtils.lerp(p.galColor.r, p.heartColor.r, ease);
-                colors[i*3+1] = THREE.MathUtils.lerp(p.galColor.g, p.heartColor.g, ease);
-                colors[i*3+2] = THREE.MathUtils.lerp(p.galColor.b, p.heartColor.b, ease);
-            } 
-            else if (state.phase === 'heart') {
-                const pulse = Math.sin(state.timeInPhase * 3.5) * 0.04;
-                const wave = Math.sin(state.timeInPhase * 2.0 + p.speedShift * 5.0) * 1.5;
-                
-                p.curPos.copy(p.heartPos).multiplyScalar(1.0 + pulse);
-                p.curPos.z += wave;
-
-                colors[i*3] = p.heartColor.r;
-                colors[i*3+1] = p.heartColor.g;
-                colors[i*3+2] = p.heartColor.b;
-            }
-
-            positions[i*3] = p.curPos.x;
-            positions[i*3+1] = p.curPos.y;
-            positions[i*3+2] = p.curPos.z;
-        });
-
-        particleSystem.geometry.attributes.position.needsUpdate = true;
-        particleSystem.geometry.attributes.color.needsUpdate = true;
-
-        if (state.phase === 'galaxy') {
-            camera.position.x = Math.sin(elapsed * 0.08) * 50;
-            camera.position.z = Math.cos(elapsed * 0.08) * 450 + 50;
-            camera.position.y = THREE.MathUtils.lerp(camera.position.y, 140, 0.02);
-            camera.lookAt(0, 0, 0);
-        } else if (state.phase === 'morph') {
-            const t = state.timeInPhase / 4.0;
-            camera.position.y = THREE.MathUtils.lerp(140, 0, t);
-            camera.position.z = THREE.MathUtils.lerp(450, 380, t);
-            camera.lookAt(0, 20, 0);
-        } else if (state.phase === 'heart') {
-            particleSystem.rotation.y = Math.sin(state.timeInPhase * 0.6) * 0.25;
-        }
-
-        composer.render();
-    }
-
-    window.onload = () => {
-        init();
-        animate();
-    };
-</script>
-
-</body>
-</html>
+        
+        const sourcePositions = new Float32Array(CONFIG.particleCount * 3);
+        const targetPositions = new Float32Array(CONFIG.particleCount * 3);
+        const initialColors = new Float32Array(CONFIG.particleCount * 3);
+        const targetColors = new Float32Array(CONFIG.particleCount * 3);
