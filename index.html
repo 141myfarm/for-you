@@ -2,43 +2,51 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>3D Particle Heart Continuum</title>
     <style>
+        * {
+            box-sizing: border-box;
+        }
         body {
             margin: 0;
             overflow: hidden;
-            background: radial-gradient(circle at center, #1a0a2a 0%, #050505 100%);
+            background: #050505;
             width: 100vw;
             height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
-            color: white;
-            font-family: sans-serif;
         }
         canvas {
-            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100% !important;
             height: 100% !important;
+            display: block;
         }
         #loader {
             position: absolute;
-            font-size: 1.2rem;
-            letter-spacing: 0.1em;
+            color: #ff3366;
+            font-family: sans-serif;
+            font-size: 1rem;
+            letter-spacing: 0.2em;
             opacity: 0.8;
             animation: pulse 1.5s infinite;
+            z-index: 10;
+            pointer-events: none;
         }
         @keyframes pulse {
-            0% { opacity: 0.4; }
+            0% { opacity: 0.3; }
             50% { opacity: 0.9; }
-            100% { opacity: 0.4; }
+            100% { opacity: 0.3; }
         }
     </style>
 </head>
 <body>
 
-<div id="loader">ИНСТАЛЛЯЦИЯ ЗАГРУЖАЕТСЯ...</div>
+<div id="loader">ЗАГРУЗКА...</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
@@ -49,177 +57,142 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 
 <script>
-    // --- ОСНОВНЫЕ НАСТРОЙКИ ---
     let scene, camera, renderer, composer;
-    let heartGeometry, particles, dust;
+    let particles, dust;
     let startTime;
-    const PARTICLE_COUNT = 15000; // Количество частиц (сердец)
-    const HEART_SCALE = 15;
-    const STAR_COUNT = 1000;
+    const PARTICLE_COUNT = 15000; 
+    const STAR_COUNT = 800;
 
-    // Цветовая палитра
     const colors = {
-        main: 0xff3366, // Яркий неоновый розовый
-        accent: 0xffcc00, // Золотой акцент
-        bg: 0x050505,
-        dust: 0x444444
+        main: 0xff3366, 
+        accent: 0xff7799, 
+        bg: 0x050505
     };
 
-    // Состояния анимации
     let state = {
-        phase: 'vortex', // vortex -> assemble -> heartbeat
+        phase: 'vortex', 
         timeInPhase: 0,
         beatFactor: 0
     };
 
-    // Математическая функция для 3D формы сердца
+    // Математика 3D сердца
     function getHeartPoint(t, u, scale) {
-        // Параметрическое уравнение 3D сердца
         const x = 16 * Math.pow(Math.sin(t), 3) * Math.sin(u);
         const y = (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t)) * Math.sin(u);
-        const z = 15 * Math.cos(u); // Глубина
+        const z = 12 * Math.cos(u); 
         return new THREE.Vector3(x * scale, y * scale, z * scale);
     }
 
-    // Вспомогательная функция для случайных точек в торе (для вихря)
-    function getRandomTorusPoint(r1, r2) {
-        const t = Math.random() * Math.PI * 2;
-        const u = Math.random() * Math.PI * 2;
-        const x = (r1 + r2 * Math.cos(u)) * Math.cos(t);
-        const y = (r1 + r2 * Math.cos(u)) * Math.sin(t);
-        const z = r2 * Math.sin(u);
+    // Случайные точки в пространстве для вихря
+    function getRandomVortexPoint(radius, height) {
+        const r = Math.random() * radius + 20;
+        const theta = Math.random() * Math.PI * 2;
+        const x = r * Math.cos(theta);
+        const z = r * Math.sin(theta);
+        const y = (Math.random() - 0.5) * height;
         return new THREE.Vector3(x, y, z);
     }
 
     function init() {
-        // Убираем лоадер
-        document.getElementById('loader').style.display = 'none';
+        const loader = document.getElementById('loader');
+        if(loader) loader.style.display = 'none';
+        
         startTime = Date.now();
 
-        // 1. Сцена и Камера
         scene = new THREE.Scene();
-        scene.fog = new THREE.FogExp2(0x100a1a, 0.002); // Космическая дымка
+        scene.fog = new THREE.FogExp2(0x050505, 0.0015);
 
-        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
         camera.position.z = 500;
 
-        // 2. Рендерер
-        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Баланс качества и производительности
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setClearColor(colors.bg, 1);
         document.body.appendChild(renderer.domElement);
 
-        // 3. ПОСТ-ОБРАБОТКА (Магия Bloom/Свечения)
+        // Настройка Bloom (Свечения)
         const renderScene = new THREE.RenderPass(scene, camera);
-        const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-        bloomPass.threshold = 0.1; // Порог свечения
-        bloomPass.strength = 1.8;   // Сила свечения
-        bloomPass.radius = 0.6;     // Радиус размытия
+        const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.6, 0.5, 0.4);
+        bloomPass.threshold = 0.0;
+        bloomPass.strength = 1.8;
+        bloomPass.radius = 0.7;
 
         composer = new THREE.EffectComposer(renderer);
         composer.addPass(renderScene);
         composer.addPass(bloomPass);
 
-        // 4. ГЕОМЕТРИЯ ЧАСТИЦ (Тысячи сердец)
-        
-        // Создаем форму маленького сердца для каждой частицы
+        // Создаем форму микро-сердца для инстансинга
         const heartShape = new THREE.Shape();
-        const x = 0, y = 0;
-        heartShape.moveTo( x + 5, y + 5 );
-        heartShape.bezierCurveTo( x + 5, y + 5, x + 4, y, x, y );
-        heartShape.bezierCurveTo( x - 6, y, x - 6, y + 7,x - 6, y + 7 );
-        heartShape.bezierCurveTo( x - 6, y + 11, x - 3, y + 15.4, x + 5, y + 19 );
-        heartShape.bezierCurveTo( x + 12, y + 15.4, x + 16, y + 11, x + 16, y + 7 );
-        heartShape.bezierCurveTo( x + 16, y + 7, x + 16, y, x + 10, y );
-        heartShape.bezierCurveTo( x + 7, y, x + 5, y + 5, x + 5, y + 5 );
+        heartShape.moveTo(0, 0);
+        heartShape.bezierCurveTo(0, 3, 3, 6, 6, 6);
+        heartShape.bezierCurveTo(10, 6, 10, 2, 10, 2);
+        heartShape.bezierCurveTo(10, -2, 6, -6, 0, -10);
+        heartShape.bezierCurveTo(-6, -6, -10, -2, -10, 2);
+        heartShape.bezierCurveTo(-10, 2, -10, 6, -6, 6);
+        heartShape.bezierCurveTo(-3, 6, 0, 3, 0, 0);
 
         const heartGeometry = new THREE.ShapeGeometry(heartShape);
-        
-        // Материал с использованием InstanceMesh для производительности
+        heartGeometry.center(); // Центрируем саму форму геометрии
+
         const material = new THREE.MeshBasicMaterial({
             color: colors.main,
             side: THREE.DoubleSide,
             transparent: true,
-            blending: THREE.AdditiveBlending, // Сложение цветов для свечения
+            blending: THREE.AdditiveBlending,
             depthWrite: false
         });
 
         particles = new THREE.InstancedMesh(heartGeometry, material, PARTICLE_COUNT);
         scene.add(particles);
 
-        // Инициализация данных частиц
-        particles.userData.phases = []; // Сохраняем позиции для разных фаз
+        particles.userData.phases = [];
+
+        // Адаптивный масштаб сердца под экран смартфона/ПК
+        const isMobile = window.innerWidth < 768;
+        const currentHeartScale = isMobile ? window.innerWidth * 0.024 : window.innerWidth * 0.012;
 
         const matrix = new THREE.Matrix4();
         const color = new THREE.Color();
-        const tempQuaternion = new THREE.Quaternion();
-        const tempEuler = new THREE.Euler();
 
         for (let i = 0; i < PARTICLE_COUNT; i++) {
-            // -- Точка для фазы сердца --
             const t = Math.random() * Math.PI * 2;
             const u = Math.random() * Math.PI;
-            const heartPos = getHeartPoint(t, u, HEART_SCALE);
             
-            // Добавляем шум для органичности
-            heartPos.x += (Math.random() - 0.5) * 15;
-            heartPos.y += (Math.random() - 0.5) * 15;
-            heartPos.z += (Math.random() - 0.5) * 10;
+            // Финальная точка (Идеально отцентрованное 3D Сердце)
+            const heartPos = getHeartPoint(t, u, currentHeartScale);
+            // Корректируем смещение по оси Y (чтобы не задиралось вверх)
+            heartPos.y += (isMobile ? 20 : 10); 
 
-            // -- Точка для фазы вихря --
-            const vortexPos = getRandomTorusPoint(250, 80);
+            // Стартовая точка вихря
+            const vortexPos = getRandomVortexPoint(300, 150);
 
-            // Сохраняем данные
             particles.userData.phases.push({
                 heart: heartPos.clone(),
                 vortex: vortexPos.clone(),
-                current: vortexPos.clone(), // Начинаем с вихря
-                velocity: new THREE.Vector3(
-                    (Math.random() - 0.5) * 2,
-                    (Math.random() - 0.5) * 2,
-                    (Math.random() - 0.5) * 2
-                ),
-                baseScale: Math.random() * 0.15 + 0.05,
-                colorBias: Math.random() // Для вариации цвета
+                current: vortexPos.clone(),
+                baseScale: (Math.random() * 0.08 + 0.04) * (isMobile ? 0.7 : 1),
+                colorBias: Math.random()
             });
 
-            // Начальная установка матрицы (в вихре)
             matrix.makeTranslation(vortexPos.x, vortexPos.y, vortexPos.z);
-            
-            // Случайный поворот
-            tempEuler.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
-            tempQuaternion.setFromEuler(tempEuler);
-            matrix.makeRotationFromQuaternion(tempQuaternion);
-            matrix.setPosition(vortexPos);
-            
-            // Устанавливаем масштаб
-            const s = particles.userData.phases[i].baseScale;
-            matrix.scale(new THREE.Vector3(s, s, s));
-
             particles.setMatrixAt(i, matrix);
 
-            // Устанавливаем цвет (смесь розового и золотого)
-            color.lerpColors(new THREE.Color(colors.main), new THREE.Color(colors.accent), particles.userData.phases[i].colorBias * 0.3);
+            // Красивый перелив цвета
+            color.lerpColors(new THREE.Color(colors.main), new THREE.Color(colors.accent), particles.userData.phases[i].colorBias);
             particles.setColorAt(i, color);
         }
 
-        // 5. КОСМИЧЕСКАЯ ПЫЛЬ (Фон)
+        // Звездный фон
         const dustGeometry = new THREE.BufferGeometry();
         const dustCoords = [];
         for (let i = 0; i < STAR_COUNT; i++) {
-            dustCoords.push(
-                (Math.random() - 0.5) * 1500,
-                (Math.random() - 0.5) * 1500,
-                (Math.random() - 0.5) * 1000
-            );
+            dustCoords.push((Math.random() - 0.5) * 1200, (Math.random() - 0.5) * 1200, (Math.random() - 0.5) * 800);
         }
         dustGeometry.setAttribute('position', new THREE.Float32BufferAttribute(dustCoords, 3));
-        const dustMaterial = new THREE.PointsMaterial({ color: colors.dust, size: 2, transparent: true, opacity: 0.5 });
+        const dustMaterial = new THREE.PointsMaterial({ color: 0x666666, size: 2, transparent: true, opacity: 0.4 });
         dust = new THREE.Points(dustGeometry, dustMaterial);
         scene.add(dust);
 
-        // Событие ресайза
         window.addEventListener('resize', onWindowResize, false);
     }
 
@@ -234,99 +207,62 @@
         requestAnimationFrame(animate);
 
         const elapsed = (Date.now() - startTime) / 1000;
-        const delta = 0.016; // Примерный fixed timestep для плавности физики
+        const delta = 0.016;
 
-        // Управление фазами
-        if (state.phase === 'vortex' && elapsed > 8) {
+        // Тайминги фаз
+        if (state.phase === 'vortex' && elapsed > 6) {
             state.phase = 'assemble';
             state.timeInPhase = 0;
-        } else if (state.phase === 'assemble' && state.timeInPhase > 6) {
+        } else if (state.phase === 'assemble' && state.timeInPhase > 5) {
             state.phase = 'heartbeat';
             state.timeInPhase = 0;
         }
         state.timeInPhase += delta;
 
-        // Расчет фактора пульсации (сердцебиение)
+        // Физика сердцебиения
         if (state.phase === 'heartbeat') {
-            // Формула для двойного удара сердца
-            const beatTime = elapsed * 1.8;
-            state.beatFactor = Math.pow(Math.sin(beatTime * Math.PI), 10) * 0.12 + 
-                                Math.pow(Math.sin(beatTime * Math.PI - Math.PI/4), 20) * 0.08;
+            const beatTime = elapsed * 1.5;
+            state.beatFactor = Math.pow(Math.sin(beatTime * Math.PI), 12) * 0.12 + 
+                               Math.pow(Math.sin(beatTime * Math.PI - Math.PI/4), 22) * 0.07;
         }
 
-        // Обновление частиц
         const matrix = new THREE.Matrix4();
-        const tempQuaternion = new THREE.Quaternion();
-        const tempEuler = new THREE.Euler();
-        const center = new THREE.Vector3(0, 0, 0);
 
         for (let i = 0; i < PARTICLE_COUNT; i++) {
             const data = particles.userData.phases[i];
             const p = data.current;
-            
             let target = new THREE.Vector3();
-            let speedFactor = 1;
 
             if (state.phase === 'vortex') {
-                // Движение в вихре (вращение + легкое притяжение к центру тора)
-                const targetVortex = data.vortex;
-                const distToTorus = p.distanceTo(targetVortex);
-                
-                // Вращение вокруг оси Y
-                const angle = 0.005;
+                // Космическое кружение вокруг центра
+                const angle = 0.007 * (1 + data.colorBias * 0.5);
                 const oldX = p.x;
                 p.x = p.x * Math.cos(angle) - p.z * Math.sin(angle);
                 p.z = oldX * Math.sin(angle) + p.z * Math.cos(angle);
-                
-                // Легкое покачивание
-                p.y += Math.sin(elapsed * 2 + i) * 0.2;
-                
-                // Плавное возвращение к форме тора
-                p.lerp(targetVortex, 0.01);
-                speedFactor = 0; // Не используем прямое движение
+                p.y += Math.sin(elapsed * 2 + i) * 0.1;
             } 
             else if (state.phase === 'assemble') {
-                // Активная сборка в сердце
-                target = data.heart.clone();
-                speedFactor = Math.min(state.timeInPhase / 3, 1) * 0.06; // Ускоряемся со временем
-                p.lerp(target, speedFactor);
+                // Идеальная сборка без перекосов
+                target = data.heart;
+                let speed = Math.min(state.timeInPhase / 3, 1) * 0.07;
+                p.lerp(target, speed);
             }
             else if (state.phase === 'heartbeat') {
-                // Режим пульсации
-                const baseHeart = data.heart;
-                // Применяем пульсацию к целевой позиции
+                // Синхронный пульс
                 const pulseScale = 1 + state.beatFactor;
-                target = baseHeart.clone().multiplyScalar(pulseScale);
-                
-                // Жесткое следование за целью
+                target.copy(data.heart).multiplyScalar(pulseScale);
                 p.copy(target);
             }
 
-            // Обновляем матрицу трансформации
             matrix.identity();
             
-            // Вращение частиц: выравниваем их "лицом" к камере в фазе сердца, 
-            // или хаотично в фазе вихря
-            if (state.phase !== 'vortex') {
-                // Плавно выравниваем ориентацию к камере
-                matrix.lookAt(p, camera.position, camera.up);
-            } else {
-                // Хаотичное вращение в вихре
-                tempEuler.set(elapsed * (1 + data.colorBias), elapsed * data.colorBias, 0);
-                tempQuaternion.setFromEuler(tempEuler);
-                matrix.makeRotationFromQuaternion(tempQuaternion);
-            }
-            
+            // Поворачиваем каждую частицу ровно к камере, чтобы не было кривизны
+            matrix.lookAt(p, camera.position, camera.up);
             matrix.setPosition(p);
             
-            // Масштабирование: базовый + пульсация в фазе сердца
             let s = data.baseScale;
             if (state.phase === 'heartbeat') {
-                s *= (1 + state.beatFactor * 0.5); // Легкое изменение размера частиц
-            }
-            // Плавное появление/исчезновение при смене фаз
-            if (state.phase === 'assemble') {
-                s *= Math.min(state.timeInPhase / 2, 1);
+                s *= (1 + state.beatFactor * 0.3);
             }
             matrix.scale(new THREE.Vector3(s, s, s));
 
@@ -334,29 +270,22 @@
         }
         particles.instanceMatrix.needsUpdate = true;
 
-        // Вращение всей сцены для глубины
+        // Вращение всей сцены для эффекта 3D глубины
         if (state.phase !== 'vortex') {
-            scene.rotation.y = elapsed * 0.1;
-            scene.rotation.x = Math.sin(elapsed * 0.3) * 0.05;
+            scene.rotation.y = Math.sin(elapsed * 0.2) * 0.2;
+            scene.rotation.x = Math.sin(elapsed * 0.1) * 0.05;
         } else {
-            scene.rotation.y = elapsed * 0.02; // Медленное вращение вихря
+            scene.rotation.y = elapsed * 0.05;
         }
         
-        // Движение пыли
-        dust.rotation.y += 0.0005;
-        dust.position.z = Math.sin(elapsed * 0.1) * 50;
+        dust.rotation.y += 0.0003;
 
-        // Рендеринг с эффектами
         composer.render();
     }
 
-    // Запускаем всё после загрузки страницы
     window.onload = () => {
-        // Небольшая задержка для красоты
-        setTimeout(() => {
-            init();
-            animate();
-        }, 1500);
+        init();
+        animate();
     };
 </script>
 
